@@ -280,4 +280,4 @@ Visit `http://localhost:3000` → Register → explore all pages with live data.
 
 ## 📄 License
 
-MIT © 2026 — Built in public by [Pushkraj](https://linkedin.com/in/alwaysgodly)
+MIT © 2026 — Built in public by [Pushkraj](https://www.linkedin.com/in/pushkraj-vyavahare-0b2332290/)
