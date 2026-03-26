@@ -14,3 +14,6 @@ export const logger = winston.createLogger({
     new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
   ],
 })
+
+// Default export (some modules import as default)
+export default logger

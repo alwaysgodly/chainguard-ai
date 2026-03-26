@@ -4,8 +4,13 @@ import helmet from 'helmet'
 import morgan from 'morgan'
 import dotenv from 'dotenv'
 import { createServer } from 'http'
-import { Server } from 'socket.io'
 import { rateLimit } from 'express-rate-limit'
+
+// Load env BEFORE any config imports
+dotenv.config()
+
+// DB connection (runs connection test on import)
+import './config/db'
 
 import authRoutes      from './routes/auth.routes'
 import educationRoutes from './routes/education.routes'
@@ -15,11 +20,8 @@ import chatRoutes      from './routes/chat.routes'
 import { errorHandler } from './middleware/error.middleware'
 import { logger }       from './config/logger'
 
-dotenv.config()
-
 const app  = express()
 const http = createServer(app)
-const io   = new Server(http, { cors: { origin: 'http://localhost:3000', credentials: true } })
 
 // ── Middleware ─────────────────────────────────────────
 app.use(helmet())
@@ -48,24 +50,8 @@ app.get('/health', (_, res) => res.json({ status: 'ok', timestamp: new Date().to
 // ── Error Handler ──────────────────────────────────────
 app.use(errorHandler)
 
-// ── WebSocket ──────────────────────────────────────────
-io.on('connection', (socket) => {
-  logger.info(`WS client connected: ${socket.id}`)
-
-  socket.on('subscribe:coin', (symbol: string) => {
-    socket.join(`coin:${symbol}`)
-    logger.info(`Client ${socket.id} subscribed to ${symbol}`)
-  })
-
-  socket.on('disconnect', () => {
-    logger.info(`WS client disconnected: ${socket.id}`)
-  })
-})
-
-export { io }
-
 // ── Start ──────────────────────────────────────────────
 const PORT = process.env.PORT || 5000
 http.listen(PORT, () => {
-  logger.info(`ChainGuard API running on http://localhost:${PORT}`)
+  logger.info(`⚡ ChainGuard API running on http://localhost:${PORT}`)
 })

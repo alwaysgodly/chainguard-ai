@@ -1,14 +1,35 @@
 {
-  "name": "chainguard-ai",
+  "name": "chainguard-backend",
   "version": "1.0.0",
+  "description": "ChainGuard AI — Node.js API Gateway",
+  "main": "dist/index.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\" \"npm run dev:ai\"",
-    "dev:frontend": "cd frontend && npm run dev",
-    "dev:backend": "cd backend && npm run dev",
-    "dev:ai": "cd ai-service && uvicorn src.main:app --reload --port 8000",
-    "install:all": "cd frontend && npm install && cd ../backend && npm install"
+    "dev":   "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "express":             "^4.18.2",
+    "cors":                "^2.8.5",
+    "helmet":              "^7.1.0",
+    "dotenv":              "^16.3.1",
+    "bcryptjs":            "^2.4.3",
+    "jsonwebtoken":        "^9.0.2",
+    "pg":                  "^8.11.3",
+    "express-rate-limit":  "^7.1.5",
+    "express-validator":   "^7.0.1",
+    "winston":             "^3.11.0",
+    "morgan":              "^1.10.0"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "@types/express":      "^4.17.21",
+    "@types/cors":         "^2.8.17",
+    "@types/bcryptjs":     "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/pg":           "^8.10.9",
+    "@types/morgan":       "^1.9.9",
+    "@types/node":         "^20.10.0",
+    "typescript":          "^5.3.2",
+    "ts-node-dev":         "^2.0.0"
   }
 }

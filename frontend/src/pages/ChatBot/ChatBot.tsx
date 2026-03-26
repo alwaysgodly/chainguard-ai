@@ -4,6 +4,7 @@ import {
   Shield, Sparkles, Copy, ThumbsUp, ThumbsDown,
   RotateCcw, ChevronRight, Bot, User
 } from 'lucide-react'
+import api from '@/services/api'
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -280,6 +281,8 @@ export default function ChatBot() {
   const [input, setInput]           = useState('')
   const [isTyping, setIsTyping]     = useState(false)
   const [copiedId, setCopiedId]     = useState<string | null>(null)
+  const [sessionId, setSessionId]   = useState<string | null>(null)
+  const [chatHistory, setChatHistory] = useState(HISTORY)
   const bottomRef                   = useRef<HTMLDivElement>(null)
   const inputRef                    = useRef<HTMLTextAreaElement>(null)
 
@@ -287,11 +290,25 @@ export default function ChatBot() {
   const mono = 'JetBrains Mono, monospace'
   const syne = 'Syne, sans-serif'
 
+  // Load chat sessions on mount
+  useEffect(() => {
+    api.get('/chat/sessions').then(res => {
+      const sessions = res.data.data || []
+      if (sessions.length > 0) {
+        setChatHistory(sessions.slice(0, 6).map((s: any) => ({
+          title: s.title || 'Chat Session',
+          time: new Date(s.created_at).toLocaleDateString(),
+          id: s.id,
+        })))
+      }
+    }).catch(() => {})
+  }, [])
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isTyping])
 
-  const sendMessage = (text?: string) => {
+  const sendMessage = async (text?: string) => {
     const content = (text || input).trim()
     if (!content) return
 
@@ -300,9 +317,29 @@ export default function ChatBot() {
     setInput('')
     setIsTyping(true)
 
-    // Simulate AI thinking
-    const thinkTime = 800 + Math.random() * 1200
-    setTimeout(() => {
+    try {
+      // Create session if needed
+      let sid = sessionId
+      if (!sid) {
+        const sessionRes = await api.post('/chat/sessions', { title: content.slice(0, 40) })
+        sid = sessionRes.data.data.id
+        setSessionId(sid)
+      }
+
+      // Send message to backend
+      const { data } = await api.post(`/chat/sessions/${sid}/messages`, { content })
+      const aiContent = data.data?.aiMessage?.content || data.data?.content || getResponse(content)
+      const aiMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: aiContent,
+        timestamp: new Date(),
+      }
+      setMessages(prev => [...prev, aiMsg])
+    } catch {
+      // Fallback to local mock responses if API fails
+      const thinkTime = 800 + Math.random() * 1200
+      await new Promise(r => setTimeout(r, thinkTime))
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -310,8 +347,9 @@ export default function ChatBot() {
         timestamp: new Date(),
       }
       setMessages(prev => [...prev, aiMsg])
+    } finally {
       setIsTyping(false)
-    }, thinkTime)
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -324,7 +362,7 @@ export default function ChatBot() {
     setTimeout(() => setCopiedId(null), 2000)
   }
 
-  const clearChat = () => { setMessages([]); setIsTyping(false) }
+  const clearChat = () => { setMessages([]); setIsTyping(false); setSessionId(null) }
 
   return (
     <div className="chat" style={{ display:'flex', flexDirection:'column', gap:0, height:'calc(100vh - 120px)' }}>
@@ -509,7 +547,7 @@ export default function ChatBot() {
           <div style={{ background:'#060912', border:'1px solid #0f1520', borderRadius:16, padding:'16px', flex:1 }}>
             <h3 style={{ color:'#e2e8f0', fontSize:13, fontWeight:700, fontFamily:syne, margin:'0 0 12px' }}>Recent Chats</h3>
             <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-              {HISTORY.map((h, i) => (
+              {chatHistory.map((h, i) => (
                 <div key={i} className="chat-sidebar-item"
                   style={{ padding:'9px 10px', borderRadius:10, background:'#0d1117', border:'1px solid #1a1f2e' }}>
                   <p style={{ color:'#d1d5db', fontSize:11, fontWeight:600, fontFamily:dm, margin:'0 0 2px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{h.title}</p>

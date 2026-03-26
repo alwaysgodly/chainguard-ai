@@ -2,25 +2,39 @@ import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 
 export interface AuthRequest extends Request {
-  user?: { id: string; email: string; role: string }
+  user?: { userId: string; email: string; role: string }
 }
 
-export const authenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
-  const token = req.headers.authorization?.split(' ')[1]
-  if (!token) return res.status(401).json({ error: 'No token provided' })
+export const protect = (req: AuthRequest, res: Response, next: NextFunction): void => {
+  const header = req.headers.authorization
+  if (!header || !header.startsWith('Bearer ')) {
+    res.status(401).json({ success: false, message: 'No token provided' })
+    return
+  }
+
+  const token = header.split(' ')[1]
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
+      userId: string
+      email: string
+      role: string
+    }
     req.user = decoded
     next()
   } catch {
-    res.status(401).json({ error: 'Invalid or expired token' })
+    res.status(401).json({ success: false, message: 'Invalid or expired token' })
   }
 }
 
 export const authorize = (...roles: string[]) =>
-  (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.user || !roles.includes(req.user.role))
-      return res.status(403).json({ error: 'Insufficient permissions' })
+  (req: AuthRequest, res: Response, next: NextFunction): void => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      res.status(403).json({ success: false, message: 'Insufficient permissions' })
+      return
+    }
     next()
   }
+
+// backwards-compat alias
+export const authenticate = protect

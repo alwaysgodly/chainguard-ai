@@ -1,27 +1,21 @@
 import { Request, Response, NextFunction } from 'express'
 import { logger } from '../config/logger'
 
-export interface AppError extends Error {
-  statusCode?: number
-  isOperational?: boolean
-}
-
 export const errorHandler = (
-  err: AppError,
+  err: Error,
   _req: Request,
   res: Response,
   _next: NextFunction
-) => {
-  const statusCode = err.statusCode || 500
-  logger.error(`${statusCode} - ${err.message}`)
+): void => {
+  logger.error(`${err.message}\n${err.stack}`)
+
+  const statusCode = (err as any).statusCode || 500
 
   res.status(statusCode).json({
     success: false,
-    error: err.message || 'Internal Server Error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
+    message: process.env.NODE_ENV === 'production'
+      ? 'Internal server error'
+      : err.message,
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack }),
   })
 }
-
-export const asyncHandler = (fn: Function) =>
-  (req: Request, res: Response, next: NextFunction) =>
-    Promise.resolve(fn(req, res, next)).catch(next)

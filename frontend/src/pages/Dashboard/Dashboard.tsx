@@ -5,6 +5,7 @@ import {
   BarChart2, Star, Clock, Wallet, RefreshCw
 } from 'lucide-react'
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts'
+import api from '@/services/api'
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -103,8 +104,41 @@ export default function Dashboard() {
   const [mounted, setMounted]   = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [liveTime, setLiveTime] = useState(new Date())
+  const [liveCoins, setLiveCoins] = useState(COINS)
+  const [liveStats, setLiveStats] = useState(STATS)
 
-  useEffect(() => { setMounted(true) }, [])
+  const COIN_COLORS: Record<string,string> = {
+    bitcoin:'#f97316', ethereum:'#8b5cf6', solana:'#06b6d4', binancecoin:'#eab308',
+  }
+
+  const fetchDashboardData = async () => {
+    try {
+      const res = await api.get('/analytics/coins?per_page=4&sparkline=true')
+      const data = res.data.data || []
+      if (data.length > 0) {
+        setLiveCoins(data.map((c: any) => ({
+          id: c.id, symbol: c.symbol?.toUpperCase(), name: c.name,
+          price: c.current_price,
+          change24h: Number((c.price_change_percentage_24h || 0).toFixed(2)),
+          mktCap: c.market_cap >= 1e12 ? `${(c.market_cap/1e12).toFixed(2)}T` : `${(c.market_cap/1e9).toFixed(0)}B`,
+          vol: c.total_volume >= 1e9 ? `${(c.total_volume/1e9).toFixed(1)}B` : `${(c.total_volume/1e6).toFixed(0)}M`,
+          color: COIN_COLORS[c.id] || '#3b82f6',
+          history: (c.sparkline_in_7d?.price || []).map((v: number, j: number) => ({ i: j, v })),
+        })))
+
+        // Update total market cap stat
+        const totalMcap = data.reduce((s: number, c: any) => s + (c.market_cap || 0), 0)
+        const totalVol = data.reduce((s: number, c: any) => s + (c.total_volume || 0), 0)
+        setLiveStats(prev => prev.map(s => {
+          if (s.label === 'Market Cap (Total)') return { ...s, value: totalMcap >= 1e12 ? `$${(totalMcap/1e12).toFixed(2)}T` : `$${(totalMcap/1e9).toFixed(0)}B` }
+          if (s.label === '24h Volume') return { ...s, value: totalVol >= 1e9 ? `$${(totalVol/1e9).toFixed(1)}B` : `$${(totalVol/1e6).toFixed(0)}M` }
+          return s
+        }))
+      }
+    } catch (e) { console.error('Dashboard fetch error:', e) }
+  }
+
+  useEffect(() => { setMounted(true); fetchDashboardData() }, [])
   useEffect(() => {
     const t = setInterval(() => setLiveTime(new Date()), 1000)
     return () => clearInterval(t)
@@ -112,7 +146,7 @@ export default function Dashboard() {
 
   const handleRefresh = () => {
     setRefreshing(true)
-    setTimeout(() => setRefreshing(false), 1500)
+    fetchDashboardData().finally(() => setTimeout(() => setRefreshing(false), 600))
   }
 
   const f = (n: string) => 'Syne, sans-serif'
@@ -152,7 +186,7 @@ export default function Dashboard() {
 
       {/* ── Summary Stats ── */}
       <div className="dash-up" style={{ animationDelay: '60ms', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-        {STATS.map((s, i) => (
+        {liveStats.map((s, i) => (
           <div key={s.label} className="dash-card" style={{
             background: '#060912', border: `1px solid ${s.color}20`,
             borderRadius: 16, padding: '16px 18px',
@@ -179,7 +213,7 @@ export default function Dashboard() {
           <span style={{ color: '#374151', fontSize: 11, fontFamily: mono }}>Updated just now</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-          {COINS.map((c, i) => (
+          {liveCoins.map((c, i) => (
             <div key={c.id} className="dash-card" style={{
               background: '#060912', border: `1px solid ${c.color}20`,
               borderRadius: 16, padding: '16px 16px 10px', position: 'relative', overflow: 'hidden',

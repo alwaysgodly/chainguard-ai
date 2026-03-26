@@ -7,6 +7,7 @@ import {
   AreaChart, Area, BarChart, Bar, ResponsiveContainer,
   Tooltip, XAxis, YAxis, CartesianGrid, LineChart, Line, Cell
 } from 'recharts'
+import api from '@/services/api'
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -36,27 +37,13 @@ const STYLES = `
   }
 `
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-const makeHistory = (base: number, days = 90) =>
-  Array.from({ length: days }, (_, i) => ({
-    d: i,
-    v: Math.max(base * 0.7, base + Math.sin(i / 8) * base * 0.12 + (Math.random() - 0.46) * base * 0.03 + i * base * 0.0008)
-  }))
+const COIN_COLORS: Record<string,string> = {
+  bitcoin:'#f97316', ethereum:'#8b5cf6', tether:'#22c55e', binancecoin:'#eab308',
+  solana:'#06b6d4', ripple:'#06b6d4', cardano:'#8b5cf6', dogecoin:'#eab308',
+  'avalanche-2':'#ef4444', polkadot:'#ef4444',
+}
 
-const COINS_FULL = [
-  { rank:1, sym:'BTC', name:'Bitcoin',  price:67420,  chg24h:2.34,  chg7d:8.12,  mktCap:'$1.33T', vol:'$38.2B', color:'#f97316', up:true,  history: makeHistory(67420) },
-  { rank:2, sym:'ETH', name:'Ethereum', price:3512,   chg24h:-1.12, chg7d:4.55,  mktCap:'$421B',  vol:'$21.4B', color:'#8b5cf6', up:false, history: makeHistory(3512)  },
-  { rank:3, sym:'SOL', name:'Solana',   price:178.4,  chg24h:5.67,  chg7d:18.2,  mktCap:'$81B',   vol:'$5.8B',  color:'#06b6d4', up:true,  history: makeHistory(178.4) },
-  { rank:4, sym:'BNB', name:'BNB',      price:412.8,  chg24h:0.89,  chg7d:2.1,   mktCap:'$62B',   vol:'$2.1B',  color:'#eab308', up:true,  history: makeHistory(412.8) },
-  { rank:5, sym:'XRP', name:'XRP',      price:0.621,  chg24h:-2.3,  chg7d:-3.4,  mktCap:'$34B',   vol:'$1.8B',  color:'#06b6d4', up:false, history: makeHistory(0.621) },
-  { rank:6, sym:'ADA', name:'Cardano',  price:0.584,  chg24h:1.12,  chg7d:6.7,   mktCap:'$20B',   vol:'$0.7B',  color:'#8b5cf6', up:true,  history: makeHistory(0.584) },
-  { rank:7, sym:'AVAX',name:'Avalanche',price:42.1,   chg24h:3.45,  chg7d:12.3,  mktCap:'$17B',   vol:'$0.9B',  color:'#ef4444', up:true,  history: makeHistory(42.1)  },
-  { rank:8, sym:'DOGE',name:'Dogecoin', price:0.182,  chg24h:-0.8,  chg7d:-5.2,  mktCap:'$26B',   vol:'$1.1B',  color:'#eab308', up:false, history: makeHistory(0.182) },
-]
-
-const FEAR_GREED_HISTORY = Array.from({ length: 30 }, (_, i) => ({
-  d: `D${i+1}`, v: 40 + Math.sin(i/4) * 25 + (Math.random() - 0.5) * 10
-}))
+const TIMEFRAMES = ['1D','1W','1M','3M','1Y']
 
 const DOMINANCE = [
   { name: 'BTC', val: 52.4, color: '#f97316' },
@@ -65,12 +52,6 @@ const DOMINANCE = [
   { name: 'BNB', val:  2.6, color: '#eab308' },
   { name: 'Other',val:24.2, color: '#374151' },
 ]
-
-const VOL_HISTORY = Array.from({ length: 14 }, (_, i) => ({
-  d: `${i+1}`, v: 60 + Math.random() * 60
-}))
-
-const TIMEFRAMES = ['1D','1W','1M','3M','1Y']
 
 // ─── Components ───────────────────────────────────────────────────────────────
 const Tip = ({ active, payload, prefix = '$' }: any) => {
@@ -98,16 +79,70 @@ const FGTip = ({ active, payload }: any) => {
 }
 
 export default function Analytics() {
-  const [selectedCoin, setSelectedCoin]   = useState(COINS_FULL[0])
+  const [coins, setCoins]                 = useState<any[]>([])
+  const [selectedCoin, setSelectedCoin]   = useState<any>(null)
+  const [chartData, setChartData]         = useState<any[]>([])
+  const [fearGreed, setFearGreed]         = useState(50)
+  const [fgHistory, setFgHistory]         = useState<any[]>([])
+  const [totalVolume, setTotalVolume]     = useState('$94.3B')
   const [timeframe, setTimeframe]         = useState('1M')
   const [search, setSearch]               = useState('')
   const [refreshing, setRefreshing]       = useState(false)
   const [mounted, setMounted]             = useState(false)
-  const [fearGreed]                       = useState(72) // mock
 
-  useEffect(() => { setMounted(true) }, [])
+  const fetchData = async () => {
+    try {
+      const [coinsRes, fgRes] = await Promise.all([
+        api.get('/analytics/coins?per_page=10&sparkline=true'),
+        api.get('/analytics/fear-greed').catch(() => ({ data: { data: [] } })),
+      ])
 
-  const filtered = COINS_FULL.filter(c =>
+      const coinData = (coinsRes.data.data || []).map((c: any, i: number) => ({
+        rank: c.market_cap_rank || i + 1,
+        sym: c.symbol?.toUpperCase(),
+        name: c.name,
+        price: c.current_price,
+        chg24h: Number((c.price_change_percentage_24h || 0).toFixed(2)),
+        chg7d: Number((c.price_change_percentage_7d_in_currency || 0).toFixed(2)),
+        mktCap: c.market_cap >= 1e12 ? `$${(c.market_cap/1e12).toFixed(2)}T` : `$${(c.market_cap/1e9).toFixed(0)}B`,
+        vol: c.total_volume >= 1e9 ? `$${(c.total_volume/1e9).toFixed(1)}B` : `$${(c.total_volume/1e6).toFixed(0)}M`,
+        color: COIN_COLORS[c.id] || '#3b82f6',
+        up: (c.price_change_percentage_24h || 0) >= 0,
+        id: c.id,
+        history: (c.sparkline_in_7d?.price || []).map((v: number, j: number) => ({ d: j, v })),
+      }))
+      setCoins(coinData)
+      if (coinData.length > 0 && !selectedCoin) setSelectedCoin(coinData[0])
+
+      // Fear & Greed
+      const fgData = fgRes.data.data || []
+      if (fgData.length > 0) {
+        setFearGreed(Number(fgData[0].value) || 50)
+        setFgHistory(fgData.slice(0, 30).map((d: any, i: number) => ({ d: `D${i+1}`, v: Number(d.value) })))
+      }
+    } catch (e) { console.error('Analytics fetch error:', e) }
+  }
+
+  useEffect(() => { setMounted(true); fetchData() }, [])
+
+  // Fetch chart when selected coin or timeframe changes
+  useEffect(() => {
+    if (!selectedCoin?.id) return
+    const days = timeframe === '1D' ? 1 : timeframe === '1W' ? 7 : timeframe === '1M' ? 30 : timeframe === '3M' ? 90 : 365
+    api.get(`/analytics/coins/${selectedCoin.id}/chart?days=${days}`)
+      .then(res => {
+        const prices = res.data.data?.prices || []
+        setChartData(prices.map((p: number[], i: number) => ({ d: i, v: p[1] })))
+      })
+      .catch(() => setChartData(selectedCoin.history || []))
+  }, [selectedCoin?.id, timeframe])
+
+  const handleRefresh = () => {
+    setRefreshing(true)
+    fetchData().finally(() => setTimeout(() => setRefreshing(false), 600))
+  }
+
+  const filtered = coins.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     c.sym.toLowerCase().includes(search.toLowerCase())
   )
@@ -119,10 +154,12 @@ export default function Analytics() {
   const mono = 'JetBrains Mono, monospace'
   const syne = 'Syne, sans-serif'
 
-  const sliceHistory = () => {
-    const n = timeframe === '1D' ? 1 : timeframe === '1W' ? 7 : timeframe === '1M' ? 30 : timeframe === '3M' ? 60 : 90
-    return selectedCoin.history.slice(-Math.min(n, selectedCoin.history.length))
-  }
+  const sc = selectedCoin || { sym:'BTC', name:'Bitcoin', price:0, chg24h:0, mktCap:'$0', vol:'$0', color:'#f97316', history:[] }
+  const displayChart = chartData.length > 0 ? chartData : sc.history || []
+
+  // Volume history from coins
+  const VOL_HISTORY = coins.slice(0, 14).map((c, i) => ({ d: `${i+1}`, v: c.price ? (c.price / (coins[0]?.price || 1)) * 80 : 50 }))
+  const totalVol = coins.reduce((s, c) => s + Number(String(c.vol).replace(/[$,BMT]/g,'') || 0), 0)
 
   return (
     <div className="anl" style={{ display:'flex', flexDirection:'column', gap:20 }}>
@@ -142,7 +179,7 @@ export default function Analytics() {
           </div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <button onClick={() => { setRefreshing(true); setTimeout(()=>setRefreshing(false),1400) }}
+          <button onClick={handleRefresh}
             style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:10, background:'#0d1117', border:'1px solid #1e2130', color:'#6b7280', fontSize:12, cursor:'pointer', fontFamily:dm }}>
             <RefreshCw size={13} className={refreshing?'anl-spin':''} /> Refresh
           </button>
@@ -163,12 +200,12 @@ export default function Analytics() {
             {/* Coin selector */}
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14, flexWrap:'wrap', gap:10 }}>
               <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                {COINS_FULL.slice(0,4).map(c => (
+                {coins.slice(0,4).map(c => (
                   <button key={c.sym} onClick={() => setSelectedCoin(c)}
                     style={{ padding:'5px 12px', borderRadius:20, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:mono,
-                      background: selectedCoin.sym === c.sym ? c.color + '20' : '#0d1117',
-                      border: `1px solid ${selectedCoin.sym === c.sym ? c.color + '60' : '#1a1f2e'}`,
-                      color: selectedCoin.sym === c.sym ? c.color : '#4b5563',
+                      background: sc.sym === c.sym ? c.color + '20' : '#0d1117',
+                      border: `1px solid ${sc.sym === c.sym ? c.color + '60' : '#1a1f2e'}`,
+                      color: sc.sym === c.sym ? c.color : '#4b5563',
                       transition:'all 0.2s' }}>
                     {c.sym}
                   </button>
@@ -178,9 +215,9 @@ export default function Analytics() {
                 {TIMEFRAMES.map(tf => (
                   <button key={tf} onClick={() => setTimeframe(tf)}
                     style={{ padding:'4px 10px', borderRadius:8, fontSize:11, cursor:'pointer', fontFamily:mono,
-                      background: timeframe===tf ? selectedCoin.color+'20' : 'transparent',
-                      border: `1px solid ${timeframe===tf ? selectedCoin.color+'50' : 'transparent'}`,
-                      color: timeframe===tf ? selectedCoin.color : '#374151',
+                      background: timeframe===tf ? sc.color+'20' : 'transparent',
+                      border: `1px solid ${timeframe===tf ? sc.color+'50' : 'transparent'}`,
+                      color: timeframe===tf ? sc.color : '#374151',
                       transition:'all 0.18s' }}>
                     {tf}
                   </button>
@@ -191,33 +228,33 @@ export default function Analytics() {
             {/* Price headline */}
             <div style={{ marginBottom:16 }}>
               <div style={{ display:'flex', alignItems:'baseline', gap:10, marginBottom:4 }}>
-                <span style={{ color:selectedCoin.color, fontSize:32, fontWeight:900, fontFamily:syne, letterSpacing:'-0.03em' }}>
-                  ${selectedCoin.price.toLocaleString()}
+                <span style={{ color:sc.color, fontSize:32, fontWeight:900, fontFamily:syne, letterSpacing:'-0.03em' }}>
+                  ${sc.price?.toLocaleString() || '0'}
                 </span>
-                <span style={{ fontSize:14, fontWeight:600, color:selectedCoin.chg24h>=0?'#22c55e':'#ef4444', display:'flex', alignItems:'center', gap:3, fontFamily:dm }}>
-                  {selectedCoin.chg24h>=0 ? <ArrowUpRight size={14}/> : <ArrowDownRight size={14}/>}
-                  {Math.abs(selectedCoin.chg24h)}% today
+                <span style={{ fontSize:14, fontWeight:600, color:sc.chg24h>=0?'#22c55e':'#ef4444', display:'flex', alignItems:'center', gap:3, fontFamily:dm }}>
+                  {sc.chg24h>=0 ? <ArrowUpRight size={14}/> : <ArrowDownRight size={14}/>}
+                  {Math.abs(sc.chg24h)}% today
                 </span>
               </div>
-              <p style={{ color:'#374151', fontSize:11, fontFamily:dm, margin:0 }}>{selectedCoin.name} · Market Cap {selectedCoin.mktCap} · Vol {selectedCoin.vol}</p>
+              <p style={{ color:'#374151', fontSize:11, fontFamily:dm, margin:0 }}>{sc.name} · Market Cap {sc.mktCap} · Vol {sc.vol}</p>
             </div>
 
             <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={sliceHistory()} margin={{ top:5, right:5, left:-20, bottom:0 }}>
+              <AreaChart data={displayChart} margin={{ top:5, right:5, left:-20, bottom:0 }}>
                 <defs>
                   <linearGradient id="coinGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor={selectedCoin.color} stopOpacity={0.25} />
-                    <stop offset="95%" stopColor={selectedCoin.color} stopOpacity={0}    />
+                    <stop offset="5%"  stopColor={sc.color} stopOpacity={0.25} />
+                    <stop offset="95%" stopColor={sc.color} stopOpacity={0}    />
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke="#0f1520" strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="d" tick={{ fill:'#374151', fontSize:10, fontFamily:mono }} axisLine={false} tickLine={false} interval={Math.floor(sliceHistory().length / 6)} />
+                <XAxis dataKey="d" tick={{ fill:'#374151', fontSize:10, fontFamily:mono }} axisLine={false} tickLine={false} interval={Math.floor(displayChart.length / 6)} />
                 <YAxis tick={{ fill:'#374151', fontSize:10, fontFamily:mono }} axisLine={false} tickLine={false}
                   tickFormatter={v => v >= 1000 ? `$${(v/1000).toFixed(0)}k` : `$${v.toFixed(2)}`} />
                 <Tooltip content={<Tip />} />
-                <Area type="monotone" dataKey="v" stroke={selectedCoin.color} strokeWidth={2}
+                <Area type="monotone" dataKey="v" stroke={sc.color} strokeWidth={2}
                   fill="url(#coinGrad)" dot={false}
-                  activeDot={{ r:4, fill:selectedCoin.color, stroke:'#0a0d14', strokeWidth:2 }} />
+                  activeDot={{ r:4, fill:sc.color, stroke:'#0a0d14', strokeWidth:2 }} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -236,7 +273,6 @@ export default function Analytics() {
               <div style={{ fontSize:48, fontWeight:900, fontFamily:syne, color:fgColor, lineHeight:1, letterSpacing:'-0.04em' }}>{fearGreed}</div>
               <p style={{ color:fgColor, fontSize:13, fontWeight:600, fontFamily:dm, margin:'4px 0 0' }}>{fgLabel}</p>
             </div>
-            {/* gauge arc simulation */}
             <div style={{ height:6, background:'linear-gradient(90deg,#ef4444,#f97316,#eab308,#22c55e,#10b981)', borderRadius:99, position:'relative', marginBottom:8 }}>
               <div style={{ position:'absolute', top:'50%', transform:'translate(-50%,-50%)', width:10, height:10, borderRadius:'50%', background:'#fff', border:'2px solid #0a0d14', left:`${fearGreed}%`, transition:'left 0.5s ease' }} />
             </div>
@@ -244,21 +280,23 @@ export default function Analytics() {
               <span style={{ color:'#ef4444', fontSize:9, fontFamily:mono }}>Fear</span>
               <span style={{ color:'#10b981', fontSize:9, fontFamily:mono }}>Greed</span>
             </div>
-            <div style={{ marginTop:12 }}>
-              <ResponsiveContainer width="100%" height={55}>
-                <AreaChart data={FEAR_GREED_HISTORY} margin={{top:2,right:0,left:0,bottom:0}}>
-                  <defs>
-                    <linearGradient id="fgGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor={fgColor} stopOpacity={0.2} />
-                      <stop offset="95%" stopColor={fgColor} stopOpacity={0}   />
-                    </linearGradient>
-                  </defs>
-                  <Area type="monotone" dataKey="v" stroke={fgColor} strokeWidth={1.5} fill="url(#fgGrad)" dot={false} />
-                  <Tooltip content={<FGTip />} />
-                </AreaChart>
-              </ResponsiveContainer>
-              <p style={{ color:'#374151', fontSize:10, fontFamily:dm, margin:'4px 0 0', textAlign:'center' }}>30-day trend</p>
-            </div>
+            {fgHistory.length > 0 && (
+              <div style={{ marginTop:12 }}>
+                <ResponsiveContainer width="100%" height={55}>
+                  <AreaChart data={fgHistory} margin={{top:2,right:0,left:0,bottom:0}}>
+                    <defs>
+                      <linearGradient id="fgGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor={fgColor} stopOpacity={0.2} />
+                        <stop offset="95%" stopColor={fgColor} stopOpacity={0}   />
+                      </linearGradient>
+                    </defs>
+                    <Area type="monotone" dataKey="v" stroke={fgColor} strokeWidth={1.5} fill="url(#fgGrad)" dot={false} />
+                    <Tooltip content={<FGTip />} />
+                  </AreaChart>
+                </ResponsiveContainer>
+                <p style={{ color:'#374151', fontSize:10, fontFamily:dm, margin:'4px 0 0', textAlign:'center' }}>30-day trend</p>
+              </div>
+            )}
           </div>
 
           {/* Dominance */}
@@ -290,11 +328,11 @@ export default function Analytics() {
             <Volume2 size={14} style={{ color:'#3b82f6' }} />
             <h3 style={{ color:'#e2e8f0', fontSize:13, fontWeight:700, fontFamily:syne, margin:0 }}>24h Volume</h3>
           </div>
-          <p style={{ color:'#3b82f6', fontSize:22, fontWeight:900, fontFamily:syne, margin:'0 0 14px', letterSpacing:'-0.02em' }}>$94.3B</p>
+          <p style={{ color:'#3b82f6', fontSize:22, fontWeight:900, fontFamily:syne, margin:'0 0 14px', letterSpacing:'-0.02em' }}>{totalVolume}</p>
           <ResponsiveContainer width="100%" height={130}>
             <BarChart data={VOL_HISTORY} margin={{top:0,right:0,left:-20,bottom:0}}>
               <XAxis dataKey="d" tick={{ fill:'#374151', fontSize:9, fontFamily:mono }} axisLine={false} tickLine={false} interval={3} />
-              <YAxis tick={{ fill:'#374151', fontSize:9, fontFamily:mono }} axisLine={false} tickLine={false} tickFormatter={v=>`${v}B`} />
+              <YAxis tick={{ fill:'#374151', fontSize:9, fontFamily:mono }} axisLine={false} tickLine={false} tickFormatter={v=>`${v.toFixed(0)}B`} />
               <Tooltip content={<Tip prefix="" />} />
               <Bar dataKey="v" radius={[3,3,0,0]}>
                 {VOL_HISTORY.map((_, i) => (
@@ -303,7 +341,6 @@ export default function Analytics() {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-          <p style={{ color:'#374151', fontSize:10, fontFamily:dm, margin:'8px 0 0', textAlign:'center' }}>Last 14 days</p>
         </div>
 
         {/* Coin Table */}
@@ -330,8 +367,8 @@ export default function Analytics() {
               <div key={c.sym} className="anl-row" onClick={() => setSelectedCoin(c)}
                 style={{ display:'grid', gridTemplateColumns:'32px 1fr 100px 80px 80px 100px 100px', gap:8,
                   padding:'9px 10px', borderRadius:10, cursor:'pointer',
-                  background: selectedCoin.sym===c.sym ? c.color+'0a' : 'transparent',
-                  border: `1px solid ${selectedCoin.sym===c.sym ? c.color+'25' : 'transparent'}`,
+                  background: sc.sym===c.sym ? c.color+'0a' : 'transparent',
+                  border: `1px solid ${sc.sym===c.sym ? c.color+'25' : 'transparent'}`,
                   opacity: mounted ? 1 : 0, transition: `opacity 0.3s ease ${i*40}ms`,
                 }}>
                 <span style={{ color:'#374151', fontSize:11, fontFamily:mono, textAlign:'center', alignSelf:'center' }}>{c.rank}</span>
@@ -345,7 +382,7 @@ export default function Analytics() {
                   </div>
                 </div>
                 <span style={{ color:'#e2e8f0', fontSize:12, fontFamily:mono, fontWeight:600, alignSelf:'center' }}>
-                  ${c.price >= 1 ? c.price.toLocaleString() : c.price.toFixed(4)}
+                  ${c.price >= 1 ? c.price.toLocaleString() : c.price?.toFixed(4)}
                 </span>
                 <span style={{ color:c.chg24h>=0?'#22c55e':'#ef4444', fontSize:11, fontFamily:mono, alignSelf:'center', display:'flex', alignItems:'center', gap:2 }}>
                   {c.chg24h>=0?<ArrowUpRight size={10}/>:<ArrowDownRight size={10}/>}

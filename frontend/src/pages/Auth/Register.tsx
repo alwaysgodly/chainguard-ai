@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Eye, EyeOff, Shield, ArrowRight, Github, Chrome, Wallet, CheckCircle } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
+import api from '@/services/api'
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -89,11 +90,18 @@ export default function Register() {
     if (!agree)                        { setError('Please accept the terms to continue.'); return }
     setError('')
     setLoading(true)
-    // Mock auth — replace with real API call in Phase 2
-    await new Promise(r => setTimeout(r, 1400))
-    setAuth({ id: '1', email, role: role as any, createdAt: new Date().toISOString() } as any, 'mock_token_123')
-    setLoading(false)
-    navigate('/dashboard')
+    try {
+      const { data } = await api.post('/auth/register', { name, email, password })
+      const { user, accessToken } = data.data
+      setAuth({ id: user.id, email: user.email, role: user.role } as any, accessToken)
+      navigate('/dashboard')
+    } catch (err: any) {
+      const resp = err.response?.data
+      const msg = resp?.message || resp?.errors?.[0]?.msg || 'Registration failed. Please try again.'
+      setError(msg)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (

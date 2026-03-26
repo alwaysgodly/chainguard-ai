@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import api from '@/services/api'
 import {
   BookOpen, ChevronLeft, ChevronRight, CheckCircle,
   RotateCcw, Trophy, Brain, Zap, Lock, Globe,
@@ -1166,7 +1167,11 @@ function QuizView({ questions, mod, onComplete }: {
 
   const handleNext = () => {
     const ns = score + (selected === q.answer ? 1 : 0)
-    if (current + 1 >= questions.length) { setDone(true); onComplete(ns); return }
+    if (current + 1 >= questions.length) {
+      setDone(true)
+      onComplete(ns)
+      return
+    }
     setVisible(false)
     setTimeout(() => { setCurrent(c => c + 1); setSelected(null); setAnswered(false); setVisible(true) }, 250)
   }
@@ -1310,6 +1315,7 @@ function ModuleDetail({ mod, onBack }: { mod: typeof MODULES[0]; onBack: () => v
   const [view, setView] = useState<'learn' | 'quiz'>('learn')
   const [activeSection, setActiveSection] = useState(0)
   const [quizDone, setQuizDone] = useState(false)
+  const [quizScore, setQuizScore] = useState(0)
   const [quizKey, setQuizKey] = useState(0)
   const [contentVisible, setContentVisible] = useState(true)
 
@@ -1566,7 +1572,16 @@ function ModuleDetail({ mod, onBack }: { mod: typeof MODULES[0]; onBack: () => v
           className="rounded-2xl p-6"
           style={{ background: '#050810', border: '1px solid #0f1520' }}
         >
-          <QuizView key={quizKey} questions={mod.quiz} mod={mod} onComplete={() => setQuizDone(true)} />
+          <QuizView key={quizKey} questions={mod.quiz} mod={mod} onComplete={(score: number) => {
+            setQuizDone(true)
+            setQuizScore(score)
+            // Send quiz results to backend for progress tracking
+            api.post('/education/progress', {
+              module_id: mod.id,
+              score,
+              total: mod.quiz.length,
+            }).catch(() => {}) // Silently fail if not authenticated
+          }} />
           {quizDone && (
             <button
               onClick={() => { setQuizKey(k => k + 1); setQuizDone(false) }}
