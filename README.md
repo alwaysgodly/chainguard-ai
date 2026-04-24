@@ -274,7 +274,7 @@ Visit `http://localhost:3000` → Register → explore all pages with live data.
 | Base background | `#040810` |
 | Primary | `#3b82f6` |
 | Accent | `#8b5cf6` |
-| Theme | Dark deep-space · glassmorphic cards · staggered animations |
+| Theme | Dark deep-space · glassmorphic cards · staggered animations|
 
 ---
 
